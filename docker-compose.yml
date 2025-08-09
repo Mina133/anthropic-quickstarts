@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/app.db}
+      - VNC_PASSWORD=${VNC_PASSWORD:-vncpassword}
+      - WIDTH=1024
+      - HEIGHT=768
+    volumes:
+      - ./data:/home/computeruse/data
+    ports:
+      - "8000:8000"
+      - "6080:6080"
+      - "5901:5900"
+
+  frontend:
+    image: nginx:alpine
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=app
+      - POSTGRES_PASSWORD=app
+      - POSTGRES_DB=app
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:
+
+

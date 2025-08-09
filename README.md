@@ -1,58 +1,83 @@
-# Anthropic Quickstarts
+# Computer Use Agent (FastAPI)
 
-Anthropic Quickstarts is a collection of projects designed to help developers quickly get started with building  applications using the Anthropic API. Each quickstart provides a foundation that you can easily build upon and customize for your specific needs.
+A FastAPI backend that reuses Anthropic computer-use agent stack (from `anthropic-quickstarts/computer-use-demo`) and replaces the experimental Streamlit UI with REST/WebSocket APIs, database persistence, and a minimal HTML/JS frontend. Includes Docker and docker-compose for local development and deployment.
 
-## Getting Started
+## Features
 
-To use these quickstarts, you'll need an Anthropic API key. If you don't have one yet, you can sign up for free at [console.anthropic.com](https://console.anthropic.com).
+- FastAPI backend with CORS
+- SQLite (default) or Postgres via `DATABASE_URL` with SQLAlchemy ORM
+- WebSocket `/sessions/{id}/stream` for real-time updates
+- Sessions and messages persistence
+- Minimal frontend (static HTML/JS) served by nginx container
+- Desktop container with noVNC for visual VNC access
+- Dockerfile and docker-compose
 
-## Available Quickstarts
+## Requirements
 
-### Customer Support Agent
+- Docker and docker-compose
+- Anthropic API key
 
-A customer support agent powered by Claude. This project demonstrates how to leverage Claude's natural language understanding and generation capabilities to create an AI-assisted customer support system with access to a knowledge base.
+## Environment
 
-[Go to Customer Support Agent Quickstart](./customer-support-agent)
+Create `.env` in the project root:
 
-### Financial Data Analyst
+```
+ANTHROPIC_API_KEY=your_key_here
+# DATABASE_URL=postgresql+psycopg2://app:app@db:5432/app
+VNC_PASSWORD=vncpassword
+```
 
-A financial data analyst powered by Claude. This project demonstrates how to leverage Claude's capabilities with interactive data visualization to analyze financial data via chat.
+Default DB is SQLite at `./data/app.db`. To use Postgres, set `DATABASE_URL` accordingly.
 
-[Go to Financial Data Analyst Quickstart](./financial-data-analyst)
+## Run locally
 
-### Computer Use Demo
+```
+docker-compose up --build
+```
 
-An environment and tools that Claude can use to control a desktop computer. This project demonstrates how to leverage the computer use capabilities of the new Claude 3.5 Sonnet model.
+- Backend: `http://localhost:8000`
+- Frontend: `http://localhost:8080`
+- noVNC: `http://localhost:6080`
 
-[Go to Computer Use Demo Quickstart](./computer-use-demo)
+## API
 
-## General Usage
+- `POST /sessions` → create a session
+- `GET /sessions/{id}` → get session and chat history
+- `POST /sessions/{id}/messages` → send message to agent (streams to WebSocket)
+- `GET /sessions/{id}/stream` → WebSocket for live updates
 
-Each quickstart project comes with its own README and setup instructions. Generally, you'll follow these steps:
+### Example
 
-1. Clone this repository
-2. Navigate to the specific quickstart directory
-3. Install the required dependencies
-4. Set up your Anthropic API key as an environment variable
-5. Run the quickstart application
+1) Create a session
 
-## Explore Further
+```bash
+curl -s -X POST http://localhost:8000/sessions | jq
+```
 
-To deepen your understanding of working with Claude and the Anthropic API, check out these resources:
+2) Connect WebSocket at `ws://localhost:8000/sessions/<id>/stream`
 
-- [Anthropic API Documentation](https://docs.anthropic.com)
-- [Anthropic Cookbook](https://github.com/anthropics/anthropic-cookbook) - A collection of code snippets and guides for common tasks
-- [Anthropic API Fundamentals Course](https://github.com/anthropics/courses/tree/master/anthropic_api_fundamentals)
+3) Send a message
 
-## Contributing
+```bash
+curl -s -X POST http://localhost:8000/sessions/<id>/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"content":"Open a browser and go to anthropic.com"}' | jq
+```
 
-We welcome contributions to the Anthropic Quickstarts repository! If you have ideas for new quickstart projects or improvements to existing ones, please open an issue or submit a pull request.
+See events streaming in WebSocket.
 
-## Community and Support
+## Development
 
-- Join our [Anthropic Discord community](https://www.anthropic.com/discord) for discussions and support
-- Check out the [Anthropic support documentation](https://support.anthropic.com) for additional help
+Install locally (optional):
 
-## License
+```
+python -m venv .venv
+. .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Notes
+
+- This demo triggers Anthropic computer-use via the SDK tools. Ensure your model and account have computer-use enabled.
+- For production, use Alembic migrations and secure your API (auth, rate limiting). This repo aims to demonstrate architecture and end-to-end plumbing.

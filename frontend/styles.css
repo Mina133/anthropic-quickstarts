@@ -1,0 +1,19 @@
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 0; }
+.container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+.layout { display: flex; gap: 16px; height: calc(100vh - 120px); }
+.pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pane-right { flex: 1.2; }
+.controls { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.chat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+#messages { height: 40vh; overflow: auto; padding: 8px; background: #fafafa; border-radius: 6px; }
+.msg { margin: 6px 0; }
+.msg.user { color: #222; }
+.msg.assistant { color: #0a6; }
+.input { display: flex; gap: 8px; margin-top: 8px; }
+.input input { flex: 1; padding: 8px; }
+.stream pre { height: 24vh; overflow: auto; background: #111; color: #0f0; padding: 8px; border-radius: 6px; }
+.vnc { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.vnc h3 { margin: 8px 0; }
+#vncFrame { flex: 1; width: 100%; border: 1px solid #ddd; border-radius: 6px; }
+
+
