@@ -1,4 +1,18 @@
-const API_BASE = (window.API_BASE || 'http://localhost:8000');
+// Use same-origin proxy to the API to avoid CORS/host issues
+const API_BASE = (window.API_BASE || '/api');
+
+async function fetchJson(url, options) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  const ct = res.headers.get('content-type') || '';
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+  }
+  if (ct.includes('application/json')) {
+    try { return JSON.parse(text); } catch (e) { throw new Error(`Invalid JSON: ${text.slice(0,200)}`); }
+  }
+  throw new Error(`Non-JSON response: ${text.slice(0, 200)}`);
+}
 
 const createSessionBtn = document.getElementById('createSessionBtn');
 const sessionIdEl = document.getElementById('sessionId');
@@ -6,6 +20,8 @@ const messagesEl = document.getElementById('messages');
 const streamList = document.getElementById('streamList');
 const sendBtn = document.getElementById('sendBtn');
 const userInput = document.getElementById('userInput');
+const sessionList = document.getElementById('sessionList');
+const refreshSessionsBtn = document.getElementById('refreshSessions');
 const vncFrame = document.getElementById('vncFrame');
 const vncContainer = document.getElementById('vncContainer');
 const vncWidthInput = document.getElementById('vncWidth');
@@ -45,16 +61,27 @@ function appendStreamBubble(kind, text, at) {
 }
 
 async function createSession() {
-  const res = await fetch(`${API_BASE}/sessions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
+  if (currentSessionId) {
+    try { await fetch(`${API_BASE}/sessions/${currentSessionId}/archive`, { method: 'POST' }); } catch (e) {}
+  }
+  const data = await fetchJson(`${API_BASE}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
   });
-  const data = await res.json();
   currentSessionId = data.id;
   sessionIdEl.textContent = `Session: ${currentSessionId}`;
+  // Use per-session novnc port if present
+  const vm = data.metadata_json?.vm;
+  if (vm?.novnc_port) {
+    vncUrl = `http://localhost:${vm.novnc_port}/vnc.html?autoconnect=true&resize=scale`;
+  }
+  // reset UI before connecting
+  messagesEl.innerHTML = '';
+  streamList.innerHTML = '';
   connectWebSocket();
   ensureVncFrame();
+  await loadSessions();
 }
 
 function connectWebSocket() {
@@ -140,6 +167,7 @@ async function sendMessage() {
 
 createSessionBtn.addEventListener('click', createSession);
 sendBtn.addEventListener('click', sendMessage);
+refreshSessionsBtn?.addEventListener('click', loadSessions);
 
 // Initialize VNC iframe on load
 ensureVncFrame();
@@ -199,6 +227,97 @@ document.querySelectorAll('.preset').forEach(btn => {
   });
 });
 
+async function loadSessions() {
+  try {
+    const items = await fetchJson(`${API_BASE}/sessions`);
+    renderSessionList(items);
+  } catch (e) {
+    appendStreamBubble('api', `[error] load sessions: ${e.message || e}`);
+  }
+}
+
+function renderSessionList(items) {
+  sessionList.innerHTML = '';
+  items.forEach(s => {
+    const el = document.createElement('div');
+    el.className = 'session-item';
+    const title = document.createElement('div');
+    title.className = 'session-title';
+    title.textContent = s.title || s.id;
+    const meta = document.createElement('div');
+    meta.className = 'session-meta';
+    meta.textContent = `${s.status} • ${new Date(s.updated_at).toLocaleString()}`;
+    el.appendChild(title);
+    el.appendChild(meta);
+    el.addEventListener('click', async () => {
+      currentSessionId = s.id;
+      sessionIdEl.textContent = `Session: ${currentSessionId}`;
+      try {
+        const detail = await fetchJson(`${API_BASE}/sessions/${s.id}`);
+        const vm = detail.session?.metadata_json?.vm || s.metadata_json?.vm;
+        if (vm?.novnc_port) {
+          vncUrl = `http://localhost:${vm.novnc_port}/vnc.html?autoconnect=true&resize=scale`;
+        }
+        // render existing messages
+        messagesEl.innerHTML = '';
+        (detail.messages || []).forEach(m => {
+          if (m.role === 'user' && m.content) addMessage('user', m.content);
+          if (m.role === 'assistant' && m.content_json) {
+            const textBlocks = (m.content_json || []).filter(b => b.type === 'text');
+            textBlocks.forEach(b => addMessage('assistant', b.text || ''));
+          }
+        });
+        // render stored events (if available)
+        try {
+          const events = await fetchJson(`${API_BASE}/sessions/${s.id}/events`);
+          streamList.innerHTML = '';
+          events.forEach(ev => {
+            const t = ev.type;
+            if (t === 'user_message') {
+              appendStreamBubble('user', ev.message?.content || '', ev.at);
+            } else if (t === 'assistant_block') {
+              appendStreamBubble('assistant', JSON.stringify(ev.data).slice(0,500), ev.at);
+            } else if (t === 'tool_result') {
+              appendStreamBubble('tool', `${ev.tool_use_id || ''}\n${(ev.data?.output || '').slice(0,800)}`, ev.at);
+              if (ev.data?.base64_image) {
+                const img = document.createElement('img');
+                img.src = `data:image/png;base64,${ev.data.base64_image}`;
+                img.style.maxWidth = '100%';
+                img.style.border = '1px solid #333';
+                const item = document.createElement('div');
+                item.className = 'tl-item';
+                const time = document.createElement('div');
+                time.className = 'tl-time';
+                time.textContent = ev.at ? new Date(ev.at).toLocaleTimeString() : '';
+                const bubble = document.createElement('div');
+                bubble.className = 'tl-bubble tool';
+                bubble.appendChild(img);
+                item.appendChild(time);
+                item.appendChild(bubble);
+                streamList.appendChild(item);
+              }
+            } else if (t === 'api') {
+              appendStreamBubble('api', `${ev.data?.request?.method || ''} ${ev.data?.request?.url || ''} -> ${ev.data?.response?.status || ''}`, ev.at);
+            } else if (t === 'assistant_message') {
+              appendStreamBubble('assistant', '[assistant_message]', ev.at);
+            } else if (t === 'assistant_done') {
+              appendStreamBubble('assistant', '[assistant_done]', ev.at);
+            }
+          });
+        } catch (e) {
+          // ignore if events backend not configured
+          streamList.innerHTML = '';
+        }
+      } catch (e) {}
+      connectWebSocket();
+      ensureVncFrame();
+    });
+    sessionList.appendChild(el);
+  });
+}
+
+// initial load
+loadSessions();
 // Monitor iframe connection state heuristically
 function markVncOnline(online) {
   if (!vncStatus) return;

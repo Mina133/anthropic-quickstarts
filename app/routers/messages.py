@@ -10,6 +10,7 @@ from ..models.session import Session as SessionModel
 from ..models.message import Message as MessageModel
 from ..schemas import MessageCreate, MessageRead
 from ..services.stream_manager import stream_manager
+from ..services.event_store import event_store
 from ..services.agent_runner import run_agent_for_new_user_message
 
 
@@ -45,11 +46,13 @@ async def send_message(session_id: str, payload: MessageCreate, db: OrmSession =
     db.refresh(user_message)
 
     # Stream to websockets that a user message arrived
-    await stream_manager.broadcast(session_id, {
+    ev = {
         "type": "user_message",
         "at": user_message.created_at.isoformat(),
         "message": {"id": user_message.id, "content": user_message.content},
-    })
+    }
+    event_store.append(session_id, ev)
+    await stream_manager.broadcast(session_id, ev)
 
     # Build Anthropic history from DB
     db.refresh(session)

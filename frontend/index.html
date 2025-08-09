@@ -10,6 +10,13 @@
     <div class="container">
       <h1>Computer Use Agent Demo</h1>
       <div class="layout">
+        <aside class="sidebar card" id="sessionSidebar">
+          <div class="sidebar-header">
+            <h3>Sessions</h3>
+            <button id="refreshSessions" class="preset">Refresh</button>
+          </div>
+          <div id="sessionList" class="session-list"></div>
+        </aside>
         <div class="pane pane-left">
           <div class="controls">
             <button id="createSessionBtn">Create Session</button>

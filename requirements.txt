@@ -7,5 +7,7 @@ pydantic-settings==2.4.0
 python-dotenv==1.0.1
 starlette==0.38.5
 psycopg2-binary==2.9.9
+docker==7.1.0
+pymongo==4.8.0
 
 

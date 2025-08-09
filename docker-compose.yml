@@ -11,6 +11,7 @@ services:
       - HEIGHT=768
     volumes:
       - ./data:/home/computeruse/data
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8000:8000"
       - "6080:6080"

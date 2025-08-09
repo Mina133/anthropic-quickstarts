@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     vnc_password: str = Field(default="vncpassword", env="VNC_PASSWORD")
     media_dir: str = Field(default="data/media")
 
+    # MongoDB (optional for event storage)
+    mongodb_uri: Optional[str] = Field(default=None, env="MONGODB_URI")
+    mongodb_db: str = Field(default="computer_use")
+
     class Config:
         env_file = ".env"
         case_sensitive = False

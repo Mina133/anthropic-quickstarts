@@ -9,6 +9,7 @@ from ..config import get_settings
 from ..models.message import Message as MessageModel
 from ..models.session import Session as SessionModel
 from ..services.stream_manager import stream_manager
+from ..services.event_store import event_store
 
 from computer_use_demo.loop import (
     sampling_loop,
@@ -74,34 +75,24 @@ async def run_agent_for_new_user_message(
     # callbacks
     def output_callback(block: Dict[str, Any]):
         # Stream each assistant content block as it arrives
-        asyncio.get_event_loop().create_task(
-            stream_manager.broadcast(
-                session.id,
-                {
-                    "type": "assistant_block",
-                    "at": datetime.utcnow().isoformat(),
-                    "data": block,
-                },
-            )
-        )
+        ev = {"type": "assistant_block", "at": datetime.utcnow().isoformat(), "data": block}
+        event_store.append(session.id, ev)
+        asyncio.get_event_loop().create_task(stream_manager.broadcast(session.id, ev))
 
     def tool_output_callback(tool_result, tool_use_id: str):
-        asyncio.get_event_loop().create_task(
-            stream_manager.broadcast(
-                session.id,
-                {
-                    "type": "tool_result",
-                    "at": datetime.utcnow().isoformat(),
-                    "tool_use_id": tool_use_id,
-                    "data": {
-                        "output": getattr(tool_result, "output", None),
-                        "error": getattr(tool_result, "error", None),
-                        "base64_image": getattr(tool_result, "base64_image", None),
-                        "system": getattr(tool_result, "system", None),
-                    },
-                },
-            )
-        )
+        ev = {
+            "type": "tool_result",
+            "at": datetime.utcnow().isoformat(),
+            "tool_use_id": tool_use_id,
+            "data": {
+                "output": getattr(tool_result, "output", None),
+                "error": getattr(tool_result, "error", None),
+                "base64_image": getattr(tool_result, "base64_image", None),
+                "system": getattr(tool_result, "system", None),
+            },
+        }
+        event_store.append(session.id, ev)
+        asyncio.get_event_loop().create_task(stream_manager.broadcast(session.id, ev))
 
     def api_response_callback(request, response_or_body, error):
         # Detailed API request/response event for live stream
@@ -144,6 +135,7 @@ async def run_agent_for_new_user_message(
                 "error": str(error) if error else None,
             },
         }
+        event_store.append(session.id, event)
         asyncio.get_event_loop().create_task(stream_manager.broadcast(session.id, event))
 
     # Run the sampling loop for one turn
@@ -178,14 +170,11 @@ async def run_agent_for_new_user_message(
 
     if last_assistant_content is not None:
         db_add_message(db, session.id, role="assistant", content_json=last_assistant_content)
-        await stream_manager.broadcast(
-            session.id,
-            {
-                "type": "assistant_message",
-                "at": datetime.utcnow().isoformat(),
-                "data": last_assistant_content,
-            },
-        )
-        await stream_manager.broadcast(session.id, {"type": "assistant_done", "at": datetime.utcnow().isoformat()})
+        final_ev = {"type": "assistant_message", "at": datetime.utcnow().isoformat(), "data": last_assistant_content}
+        event_store.append(session.id, final_ev)
+        await stream_manager.broadcast(session.id, final_ev)
+        done_ev = {"type": "assistant_done", "at": datetime.utcnow().isoformat()}
+        event_store.append(session.id, done_ev)
+        await stream_manager.broadcast(session.id, done_ev)
 
 
