@@ -30,9 +30,27 @@
           </div>
         </div>
         <div class="pane pane-right">
-          <div class="vnc">
-            <h3>Virtual Desktop</h3>
-            <iframe id="vncFrame" title="noVNC" referrerpolicy="no-referrer" allow="clipboard-read; clipboard-write"></iframe>
+          <div class="vnc card">
+            <div class="vnc-header">
+              <h3>Virtual Desktop</h3>
+              <div class="vnc-controls">
+                <div class="size-inputs">
+                  <label>W <input id="vncWidth" type="number" min="640" max="2560" step="1" value="1024" /></label>
+                  <label>H <input id="vncHeight" type="number" min="480" max="1600" step="1" value="768" /></label>
+                  <label class="lock">
+                    <input id="lockAspect" type="checkbox" checked /> lock
+                  </label>
+                </div>
+                <div class="presets">
+                  <button class="preset" data-w="1024" data-h="768">XGA 1024×768</button>
+                  <button class="preset" data-w="1280" data-h="800">WXGA 1280×800</button>
+                  <button class="preset" data-w="1366" data-h="768">FWXGA 1366×768</button>
+                </div>
+              </div>
+            </div>
+            <div id="vncContainer" class="vnc-container">
+              <iframe id="vncFrame" title="noVNC" referrerpolicy="no-referrer" allow="clipboard-read; clipboard-write"></iframe>
+            </div>
           </div>
         </div>
       </div>

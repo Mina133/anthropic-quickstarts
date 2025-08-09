@@ -7,10 +7,15 @@ const streamOutEl = document.getElementById('streamOut');
 const sendBtn = document.getElementById('sendBtn');
 const userInput = document.getElementById('userInput');
 const vncFrame = document.getElementById('vncFrame');
+const vncContainer = document.getElementById('vncContainer');
+const vncWidthInput = document.getElementById('vncWidth');
+const vncHeightInput = document.getElementById('vncHeight');
+const lockAspectInput = document.getElementById('lockAspect');
 
 let currentSessionId = null;
 let ws = null;
 let vncUrl = 'http://localhost:6080/vnc.html?autoconnect=true';
+let aspectRatio = 1024/768;
 
 function addMessage(role, text) {
   const div = document.createElement('div');
@@ -76,6 +81,8 @@ async function ensureVncFrame() {
   if (vncFrame && vncFrame.src !== vncUrl) {
     vncFrame.src = vncUrl;
   }
+  // Apply initial size
+  setVncSize(parseInt(vncWidthInput.value, 10), parseInt(vncHeightInput.value, 10), false);
 }
 
 async function sendMessage() {
@@ -95,5 +102,42 @@ sendBtn.addEventListener('click', sendMessage);
 
 // Initialize VNC iframe on load
 ensureVncFrame();
+
+function setVncSize(w, h, fromHeightChange) {
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return;
+  if (lockAspectInput.checked) {
+    if (fromHeightChange) {
+      w = Math.round(h * aspectRatio);
+    } else {
+      h = Math.round(w / aspectRatio);
+    }
+  } else {
+    aspectRatio = w / h;
+  }
+  vncFrame.style.width = w + 'px';
+  vncFrame.style.height = h + 'px';
+  vncWidthInput.value = w;
+  vncHeightInput.value = h;
+}
+
+vncWidthInput?.addEventListener('input', () => {
+  const w = parseInt(vncWidthInput.value, 10);
+  const h = parseInt(vncHeightInput.value, 10);
+  setVncSize(w, h, false);
+});
+
+vncHeightInput?.addEventListener('input', () => {
+  const w = parseInt(vncWidthInput.value, 10);
+  const h = parseInt(vncHeightInput.value, 10);
+  setVncSize(w, h, true);
+});
+
+document.querySelectorAll('.preset').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const w = parseInt(btn.getAttribute('data-w'), 10);
+    const h = parseInt(btn.getAttribute('data-h'), 10);
+    setVncSize(w, h, false);
+  });
+});
 
 
