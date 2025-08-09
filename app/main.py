@@ -1,5 +1,6 @@
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
@@ -30,6 +31,8 @@ def create_app() -> FastAPI:
     app.include_router(sessions_router)
     app.include_router(messages_router)
     app.include_router(stream_router)
+    # Serve media if any future endpoints write images to disk
+    app.mount("/media", StaticFiles(directory="data/media"), name="media")
     app.include_router(vnc_router)
 
     @app.get("/healthz")

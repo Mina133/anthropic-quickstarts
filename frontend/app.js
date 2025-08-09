@@ -3,7 +3,7 @@ const API_BASE = (window.API_BASE || 'http://localhost:8000');
 const createSessionBtn = document.getElementById('createSessionBtn');
 const sessionIdEl = document.getElementById('sessionId');
 const messagesEl = document.getElementById('messages');
-const streamOutEl = document.getElementById('streamOut');
+const streamList = document.getElementById('streamList');
 const sendBtn = document.getElementById('sendBtn');
 const userInput = document.getElementById('userInput');
 const vncFrame = document.getElementById('vncFrame');
@@ -11,10 +11,14 @@ const vncContainer = document.getElementById('vncContainer');
 const vncWidthInput = document.getElementById('vncWidth');
 const vncHeightInput = document.getElementById('vncHeight');
 const lockAspectInput = document.getElementById('lockAspect');
+const fitToggle = document.getElementById('fitToggle');
+const vncStatus = document.getElementById('vncStatus');
+const vncReconnect = document.getElementById('vncReconnect');
+const novncNewTab = document.getElementById('novncNewTab');
 
 let currentSessionId = null;
 let ws = null;
-let vncUrl = 'http://localhost:6080/vnc.html?autoconnect=true';
+let vncUrl = 'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&host=localhost&port=6080&path=websockify';
 let aspectRatio = 1024/768;
 
 function addMessage(role, text) {
@@ -25,9 +29,19 @@ function addMessage(role, text) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function appendStream(text) {
-  streamOutEl.textContent += text + '\n';
-  streamOutEl.scrollTop = streamOutEl.scrollHeight;
+function appendStreamBubble(kind, text, at) {
+  const item = document.createElement('div');
+  item.className = 'tl-item';
+  const time = document.createElement('div');
+  time.className = 'tl-time';
+  time.textContent = at ? new Date(at).toLocaleTimeString() : '';
+  const bubble = document.createElement('div');
+  bubble.className = `tl-bubble ${kind}`;
+  bubble.textContent = text;
+  item.appendChild(time);
+  item.appendChild(bubble);
+  streamList.appendChild(item);
+  streamList.scrollTop = streamList.scrollHeight;
 }
 
 async function createSession() {
@@ -48,38 +62,65 @@ function connectWebSocket() {
   if (ws) ws.close();
   const url = API_BASE.replace('http', 'ws') + `/sessions/${currentSessionId}/stream`;
   ws = new WebSocket(url);
-  ws.onopen = () => appendStream('[connected]');
+  ws.onopen = () => appendStreamBubble('api', '[connected]');
   ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
-      if (msg.type === 'user_message') {
-        addMessage('user', msg.message.content);
-      } else if (msg.type === 'content_block_delta' || msg.type === 'message_delta' || msg.type === 'event') {
-        appendStream(JSON.stringify(msg));
+      const t = msg.type;
+      if (t === 'user_message') {
+        const content = msg.message?.content || '';
+        addMessage('user', content);
+        appendStreamBubble('user', content, msg.at);
+      } else if (t === 'assistant_block') {
+        const block = msg.data;
+        if (block?.type === 'text' && block.text) {
+          addMessage('assistant', block.text);
+        }
+        appendStreamBubble('assistant', JSON.stringify(block).slice(0, 500), msg.at);
+      } else if (t === 'assistant_message') {
+        appendStreamBubble('assistant', '[assistant_message]', msg.at);
+      } else if (t === 'tool_result') {
+        // Render tool result; if image present, show below stream area
+        appendStreamBubble('tool', `${msg.tool_use_id || ''}\n${(msg.data?.output || '').slice(0,800)}`, msg.at);
+        if (msg.data?.base64_image) {
+          const img = document.createElement('img');
+          img.src = `data:image/png;base64,${msg.data.base64_image}`;
+          img.style.maxWidth = '100%';
+          img.style.border = '1px solid #333';
+          const item = document.createElement('div');
+          item.className = 'tl-item';
+          const time = document.createElement('div');
+          time.className = 'tl-time';
+          time.textContent = msg.at ? new Date(msg.at).toLocaleTimeString() : '';
+          const bubble = document.createElement('div');
+          bubble.className = 'tl-bubble tool';
+          bubble.appendChild(img);
+          item.appendChild(time);
+          item.appendChild(bubble);
+          streamList.appendChild(item);
+          streamList.scrollTop = streamList.scrollHeight;
+        }
+      } else if (t === 'api') {
+        appendStreamBubble('api', `${msg.data?.request?.method || ''} ${msg.data?.request?.url || ''} -> ${msg.data?.response?.status || ''}`, msg.at);
+      } else if (t === 'assistant_done') {
+        appendStreamBubble('assistant', '[assistant_done]', msg.at);
       } else {
-        appendStream(JSON.stringify(msg));
+        appendStreamBubble('api', JSON.stringify(msg));
       }
     } catch (e) {
-      appendStream(ev.data);
+      appendStreamBubble('api', ev.data);
     }
   };
-  ws.onclose = () => appendStream('[disconnected]');
+  ws.onclose = () => appendStreamBubble('api', '[disconnected]');
 }
 
 async function ensureVncFrame() {
-  try {
-    const res = await fetch(`${API_BASE}/vnc/info`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.novnc_url) {
-        vncUrl = data.novnc_url + (data.novnc_url.includes('?') ? '&' : '?') + 'autoconnect=true';
-      }
-    }
-  } catch (e) {
-    // ignore, fallback to default vncUrl
-  }
+  // Using same-origin proxy at /novnc/, no need to fetch API info
   if (vncFrame && vncFrame.src !== vncUrl) {
     vncFrame.src = vncUrl;
+  }
+  if (novncNewTab) {
+    novncNewTab.href = vncUrl;
   }
   // Apply initial size
   setVncSize(parseInt(vncWidthInput.value, 10), parseInt(vncHeightInput.value, 10), false);
@@ -105,6 +146,12 @@ ensureVncFrame();
 
 function setVncSize(w, h, fromHeightChange) {
   if (!Number.isFinite(w) || !Number.isFinite(h)) return;
+  if (fitToggle?.checked) {
+    // In fit mode, we don't apply explicit pixel sizes; let CSS scale to container
+    vncFrame.style.width = '100%';
+    vncFrame.style.height = '100%';
+    return;
+  }
   if (lockAspectInput.checked) {
     if (fromHeightChange) {
       w = Math.round(h * aspectRatio);
@@ -132,6 +179,18 @@ vncHeightInput?.addEventListener('input', () => {
   setVncSize(w, h, true);
 });
 
+fitToggle?.addEventListener('change', () => {
+  const container = document.getElementById('vncContainer');
+  if (fitToggle.checked) {
+    container.classList.add('fit');
+  } else {
+    container.classList.remove('fit');
+  }
+  const w = parseInt(vncWidthInput.value, 10);
+  const h = parseInt(vncHeightInput.value, 10);
+  setVncSize(w, h, false);
+});
+
 document.querySelectorAll('.preset').forEach(btn => {
   btn.addEventListener('click', () => {
     const w = parseInt(btn.getAttribute('data-w'), 10);
@@ -139,5 +198,23 @@ document.querySelectorAll('.preset').forEach(btn => {
     setVncSize(w, h, false);
   });
 });
+
+// Monitor iframe connection state heuristically
+function markVncOnline(online) {
+  if (!vncStatus) return;
+  vncStatus.textContent = online ? 'online' : 'offline';
+  vncStatus.classList.toggle('online', online);
+  vncStatus.classList.toggle('offline', !online);
+}
+
+vncFrame?.addEventListener('load', () => markVncOnline(true));
+vncFrame?.addEventListener('error', () => markVncOnline(false));
+vncReconnect?.addEventListener('click', () => {
+  markVncOnline(false);
+  vncFrame.src = vncUrl + `&t=${Date.now()}`;
+});
+
+// Optional: VM reset (disabled by default to avoid desktop instability)
+async function resetVm() { /* intentionally no-op */ }
 
 

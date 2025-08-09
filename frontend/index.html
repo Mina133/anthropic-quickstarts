@@ -24,9 +24,9 @@
             </div>
           </div>
 
-          <div class="stream">
+          <div class="stream card">
             <h3>Live Stream</h3>
-            <pre id="streamOut"></pre>
+            <div id="streamList" class="timeline"></div>
           </div>
         </div>
         <div class="pane pane-right">
@@ -34,11 +34,19 @@
             <div class="vnc-header">
               <h3>Virtual Desktop</h3>
               <div class="vnc-controls">
+                <div class="vnc-actions">
+                  <span id="vncStatus" class="status offline">offline</span>
+                  <button id="vncReconnect" class="preset">Reconnect</button>
+                  <a id="novncNewTab" class="preset" href="#" target="_blank" rel="noopener">Open Tab</a>
+                </div>
                 <div class="size-inputs">
                   <label>W <input id="vncWidth" type="number" min="640" max="2560" step="1" value="1024" /></label>
                   <label>H <input id="vncHeight" type="number" min="480" max="1600" step="1" value="768" /></label>
                   <label class="lock">
                     <input id="lockAspect" type="checkbox" checked /> lock
+                  </label>
+                  <label class="lock">
+                    <input id="fitToggle" type="checkbox" checked /> fit
                   </label>
                 </div>
                 <div class="presets">
@@ -48,8 +56,8 @@
                 </div>
               </div>
             </div>
-            <div id="vncContainer" class="vnc-container">
-              <iframe id="vncFrame" title="noVNC" referrerpolicy="no-referrer" allow="clipboard-read; clipboard-write"></iframe>
+            <div id="vncContainer" class="vnc-container fit">
+              <iframe id="vncFrame" title="noVNC" referrerpolicy="no-referrer" allow="clipboard-read; clipboard-write" allowfullscreen></iframe>
             </div>
           </div>
         </div>

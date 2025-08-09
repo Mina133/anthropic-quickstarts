@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import uuid
 from typing import List, Dict, Any, Optional
 
@@ -74,7 +75,14 @@ async def run_agent_for_new_user_message(
     def output_callback(block: Dict[str, Any]):
         # Stream each assistant content block as it arrives
         asyncio.get_event_loop().create_task(
-            stream_manager.broadcast(session.id, {"type": "assistant_block", "data": block})
+            stream_manager.broadcast(
+                session.id,
+                {
+                    "type": "assistant_block",
+                    "at": datetime.utcnow().isoformat(),
+                    "data": block,
+                },
+            )
         )
 
     def tool_output_callback(tool_result, tool_use_id: str):
@@ -83,6 +91,7 @@ async def run_agent_for_new_user_message(
                 session.id,
                 {
                     "type": "tool_result",
+                    "at": datetime.utcnow().isoformat(),
                     "tool_use_id": tool_use_id,
                     "data": {
                         "output": getattr(tool_result, "output", None),
@@ -95,11 +104,47 @@ async def run_agent_for_new_user_message(
         )
 
     def api_response_callback(request, response_or_body, error):
-        # Best-effort debug stream
-        payload = {"method": getattr(request, "method", None), "url": str(getattr(request, "url", ""))}
-        asyncio.get_event_loop().create_task(
-            stream_manager.broadcast(session.id, {"type": "api", "data": payload})
-        )
+        # Detailed API request/response event for live stream
+        try:
+            method = getattr(request, "method", None)
+            url = str(getattr(request, "url", ""))
+            headers = dict(getattr(request, "headers", {}) or {})
+        except Exception:
+            method = None
+            url = None
+            headers = {}
+
+        status_code = None
+        resp_headers = {}
+        body_preview = None
+        if error is not None:
+            try:
+                body_preview = str(getattr(error, "body", None))
+            except Exception:
+                body_preview = str(error)
+        else:
+            try:
+                status_code = getattr(response_or_body, "status_code", None)
+                resp_headers = dict(getattr(response_or_body, "headers", {}) or {})
+                # best-effort body preview
+                text = getattr(response_or_body, "text", None)
+                if callable(text):
+                    text = text()
+                if text:
+                    body_preview = (text[:1000] + "…") if len(text) > 1000 else text
+            except Exception:
+                pass
+
+        event = {
+            "type": "api",
+            "at": datetime.utcnow().isoformat(),
+            "data": {
+                "request": {"method": method, "url": url, "headers": headers},
+                "response": {"status": status_code, "headers": resp_headers, "body_preview": body_preview},
+                "error": str(error) if error else None,
+            },
+        }
+        asyncio.get_event_loop().create_task(stream_manager.broadcast(session.id, event))
 
     # Run the sampling loop for one turn
     updated_messages = await sampling_loop(
@@ -133,6 +178,14 @@ async def run_agent_for_new_user_message(
 
     if last_assistant_content is not None:
         db_add_message(db, session.id, role="assistant", content_json=last_assistant_content)
-        await stream_manager.broadcast(session.id, {"type": "assistant_done"})
+        await stream_manager.broadcast(
+            session.id,
+            {
+                "type": "assistant_message",
+                "at": datetime.utcnow().isoformat(),
+                "data": last_assistant_content,
+            },
+        )
+        await stream_manager.broadcast(session.id, {"type": "assistant_done", "at": datetime.utcnow().isoformat()})
 
 

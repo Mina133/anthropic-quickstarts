@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     vnc_port: int = Field(default=5901)
     novnc_port: int = Field(default=6080)
     vnc_password: str = Field(default="vncpassword", env="VNC_PASSWORD")
+    media_dir: str = Field(default="data/media")
 
     class Config:
         env_file = ".env"

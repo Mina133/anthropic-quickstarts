@@ -47,6 +47,7 @@ async def send_message(session_id: str, payload: MessageCreate, db: OrmSession =
     # Stream to websockets that a user message arrived
     await stream_manager.broadcast(session_id, {
         "type": "user_message",
+        "at": user_message.created_at.isoformat(),
         "message": {"id": user_message.id, "content": user_message.content},
     })
 
