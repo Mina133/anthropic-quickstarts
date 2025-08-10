@@ -54,6 +54,18 @@ async def send_message(session_id: str, payload: MessageCreate, db: OrmSession =
     event_store.append(session_id, ev)
     await stream_manager.broadcast(session_id, ev)
 
+    # Emit VM meta to help the frontend validate the iframe port/session binding
+    try:
+        vm_meta = (session.metadata_json or {}).get("vm")
+        if vm_meta:
+            await stream_manager.broadcast(session_id, {
+                "type": "api",
+                "at": user_message.created_at.isoformat(),
+                "data": {"request": {"method": "VM", "url": "match-check"}, "response": {"status": 200}, "vm": vm_meta}
+            })
+    except Exception:
+        pass
+
     # Build Anthropic history from DB
     db.refresh(session)
     history = build_anthropic_history(session.messages)

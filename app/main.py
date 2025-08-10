@@ -15,7 +15,7 @@ settings = get_settings()
 
 
 def create_app() -> FastAPI:
-    # Create tables on startup (simple for demo; use migrations in prod)
+    # Create tables on startup 
     Base.metadata.create_all(bind=engine)
 
     app = FastAPI(title=settings.app_name)

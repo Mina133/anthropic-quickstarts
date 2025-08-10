@@ -1,4 +1,4 @@
-// Use same-origin proxy to the API to avoid CORS/host issues
+// Use same-origin API proxy (overrideable via window.API_BASE)
 const API_BASE = (window.API_BASE || '/api');
 
 async function fetchJson(url, options) {
@@ -22,6 +22,7 @@ const sendBtn = document.getElementById('sendBtn');
 const userInput = document.getElementById('userInput');
 const sessionList = document.getElementById('sessionList');
 const refreshSessionsBtn = document.getElementById('refreshSessions');
+const persistHint = document.getElementById('persistHint');
 const vncFrame = document.getElementById('vncFrame');
 const vncContainer = document.getElementById('vncContainer');
 const vncWidthInput = document.getElementById('vncWidth');
@@ -31,11 +32,13 @@ const fitToggle = document.getElementById('fitToggle');
 const vncStatus = document.getElementById('vncStatus');
 const vncReconnect = document.getElementById('vncReconnect');
 const novncNewTab = document.getElementById('novncNewTab');
+const vmMeta = document.getElementById('vmMeta');
 
 let currentSessionId = null;
 let ws = null;
-let vncUrl = 'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&host=localhost&port=6080&path=websockify';
+let vncUrl = '/novnc/vnc.html?autoconnect=true&resize=scale&path=novnc/websockify';
 let aspectRatio = 1024/768;
+let wsConnecting = false;
 
 function addMessage(role, text) {
   const div = document.createElement('div');
@@ -61,6 +64,10 @@ function appendStreamBubble(kind, text, at) {
 }
 
 async function createSession() {
+  // Immediately cut current VM view and WS before archiving
+  try { if (ws) { ws.close(); } } catch (_) {}
+  try { if (vncFrame) { vncFrame.src = 'about:blank'; } } catch (_) {}
+
   if (currentSessionId) {
     try { await fetch(`${API_BASE}/sessions/${currentSessionId}/archive`, { method: 'POST' }); } catch (e) {}
   }
@@ -71,22 +78,20 @@ async function createSession() {
   });
   currentSessionId = data.id;
   sessionIdEl.textContent = `Session: ${currentSessionId}`;
-  // Use per-session novnc port if present
+  // Stick to same-origin proxied noVNC for stability
   const vm = data.metadata_json?.vm;
-  if (vm?.novnc_port) {
-    vncUrl = `http://localhost:${vm.novnc_port}/vnc.html?autoconnect=true&resize=scale`;
-  }
+  if (vmMeta) vmMeta.textContent = '';
   // reset UI before connecting
   messagesEl.innerHTML = '';
   streamList.innerHTML = '';
-  connectWebSocket();
+  await connectWebSocketWithRetry();
   ensureVncFrame();
   await loadSessions();
 }
 
-function connectWebSocket() {
+async function connectWebSocketWithRetry() {
   if (!currentSessionId) return;
-  if (ws) ws.close();
+  try { if (ws) { ws.close(); ws = null; } } catch (_) {}
   const url = API_BASE.replace('http', 'ws') + `/sessions/${currentSessionId}/stream`;
   ws = new WebSocket(url);
   ws.onopen = () => appendStreamBubble('api', '[connected]');
@@ -172,6 +177,81 @@ refreshSessionsBtn?.addEventListener('click', loadSessions);
 // Initialize VNC iframe on load
 ensureVncFrame();
 
+// Add WS connect helper and image bubble renderer
+async function connectWebSocketWithRetry(maxAttempts = 5, delayMs = 300) {
+  if (!currentSessionId || wsConnecting) return;
+  wsConnecting = true;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      try { if (ws) { ws.close(); ws = null; } } catch (_) {}
+      const url = API_BASE.replace('http', 'ws') + `/sessions/${currentSessionId}/stream`;
+      await new Promise((resolve, reject) => {
+        let opened = false;
+        const sock = new WebSocket(url);
+        sock.onopen = () => { opened = true; ws = sock; appendStreamBubble('api', '[connected]'); resolve(); };
+        sock.onmessage = (ev) => {
+          try { const msg = JSON.parse(ev.data); handleStreamMessage(msg); } catch (e) {}
+        };
+        sock.onerror = (e) => { lastErr = e; try { sock.close(); } catch(_){}; };
+        sock.onclose = (e) => { if (!opened) reject(new Error(`WS closed before open (code=${e.code})`)); else appendStreamBubble('api', '[disconnected]'); };
+      });
+      wsConnecting = false;
+      return;
+    } catch (e) {
+      lastErr = e;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  wsConnecting = false;
+  appendStreamBubble('api', `[error] ws connect failed: ${lastErr?.message || lastErr}`);
+}
+
+function handleStreamMessage(msg) {
+  const t = msg.type;
+  if (t === 'user_message') {
+    const content = msg.message?.content || '';
+    addMessage('user', content);
+    appendStreamBubble('user', content, msg.at);
+  } else if (t === 'assistant_block') {
+    const block = msg.data;
+    if (block?.type === 'text' && block.text) {
+      addMessage('assistant', block.text);
+    }
+    appendStreamBubble('assistant', JSON.stringify(block).slice(0, 500), msg.at);
+  } else if (t === 'assistant_message') {
+    appendStreamBubble('assistant', '[assistant_message]', msg.at);
+  } else if (t === 'tool_result') {
+    appendStreamBubble('tool', `${msg.tool_use_id || ''}\n${(msg.data?.output || '').slice(0,800)}`, msg.at);
+    if (msg.data?.base64_image) renderImageBubble(msg.data.base64_image, msg.at);
+  } else if (t === 'api') {
+    appendStreamBubble('api', `${msg.data?.request?.method || ''} ${msg.data?.request?.url || ''} -> ${msg.data?.response?.status || ''}`, msg.at);
+  } else if (t === 'assistant_done') {
+    appendStreamBubble('assistant', '[assistant_done]', msg.at);
+  } else {
+    appendStreamBubble('api', JSON.stringify(msg));
+  }
+}
+
+function renderImageBubble(base64Image, at) {
+  const img = document.createElement('img');
+  img.src = `data:image/png;base64,${base64Image}`;
+  img.style.maxWidth = '100%';
+  img.style.border = '1px solid #333';
+  const item = document.createElement('div');
+  item.className = 'tl-item';
+  const time = document.createElement('div');
+  time.className = 'tl-time';
+  time.textContent = at ? new Date(at).toLocaleTimeString() : '';
+  const bubble = document.createElement('div');
+  bubble.className = 'tl-bubble tool';
+  bubble.appendChild(img);
+  item.appendChild(time);
+  item.appendChild(bubble);
+  streamList.appendChild(item);
+  streamList.scrollTop = streamList.scrollHeight;
+}
+
 function setVncSize(w, h, fromHeightChange) {
   if (!Number.isFinite(w) || !Number.isFinite(h)) return;
   if (fitToggle?.checked) {
@@ -231,6 +311,8 @@ async function loadSessions() {
   try {
     const items = await fetchJson(`${API_BASE}/sessions`);
     renderSessionList(items);
+    // Show hint if no Mongo events likely (heuristic: always show; backend no-ops if not configured)
+    if (persistHint) persistHint.classList.remove('hidden');
   } catch (e) {
     appendStreamBubble('api', `[error] load sessions: ${e.message || e}`);
   }
@@ -255,9 +337,7 @@ function renderSessionList(items) {
       try {
         const detail = await fetchJson(`${API_BASE}/sessions/${s.id}`);
         const vm = detail.session?.metadata_json?.vm || s.metadata_json?.vm;
-        if (vm?.novnc_port) {
-          vncUrl = `http://localhost:${vm.novnc_port}/vnc.html?autoconnect=true&resize=scale`;
-        }
+        if (vmMeta) vmMeta.textContent = '';
         // render existing messages
         messagesEl.innerHTML = '';
         (detail.messages || []).forEach(m => {
@@ -309,7 +389,7 @@ function renderSessionList(items) {
           streamList.innerHTML = '';
         }
       } catch (e) {}
-      connectWebSocket();
+      await connectWebSocketWithRetry();
       ensureVncFrame();
     });
     sessionList.appendChild(el);

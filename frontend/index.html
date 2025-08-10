@@ -21,6 +21,7 @@
           <div class="controls">
             <button id="createSessionBtn">Create Session</button>
             <span id="sessionId"></span>
+            <span id="persistHint" class="hint hidden">Tip: set MONGODB_URI to persist stream timeline</span>
           </div>
 
           <div class="chat">
@@ -39,7 +40,7 @@
         <div class="pane pane-right">
           <div class="vnc card">
             <div class="vnc-header">
-              <h3>Virtual Desktop</h3>
+              <h3>Virtual Desktop <small id="vmMeta" class="vm-meta"></small></h3>
               <div class="vnc-controls">
                 <div class="vnc-actions">
                   <span id="vncStatus" class="status offline">offline</span>
