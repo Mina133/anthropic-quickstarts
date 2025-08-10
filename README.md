@@ -174,7 +174,10 @@ docker-compose up --build
 
 - Backend: `http://localhost:8000`
 - Frontend: `http://localhost:8080`
-- noVNC: `http://localhost:6080`
+- Frontend proxy paths:
+  - API (same-origin): `http://localhost:8080/api/` (health: `http://localhost:8080/api/healthz`)
+  - noVNC (same-origin): `http://localhost:8080/novnc/`
+- Direct noVNC (host-mapped port): `http://localhost:6080`
 
 Or development mode without Docker:
 
@@ -262,6 +265,14 @@ curl -s -X POST http://localhost:8000/sessions/<id>/messages \
 
 Observe incremental events over the WebSocket.
 
+## Frontend proxy & embedding
+
+- The frontend (nginx) proxies API and noVNC to avoid CORS/mixed-content:
+  - `/api/` → `api:8000`
+  - `/novnc/` → `api:6080`
+- The bundled UI embeds the virtual desktop via the same-origin URL `/novnc/vnc.html?autoconnect=true&resize=scale&path=novnc/websockify` for stability.
+- Per-session VM containers are still created by the backend and their dynamic ports are stored at `session.metadata_json.vm.{novnc_port,vnc_port}`. If you prefer the iframe to connect to each session's dedicated noVNC port, point it to `http://localhost:<novnc_port>/vnc.html?autoconnect=true&resize=scale`.
+
 ## Security, deployment, and ops notes
 
 - Add authentication/authorization, rate limiting, and CSRF protections as appropriate
@@ -270,6 +281,14 @@ Observe incremental events over the WebSocket.
 - Harden Docker VM lifecycle and resource limits; ensure container cleanup on failures
 - Add observability: structured logging, metrics, and tracing for agent/tool calls
 - Back up databases; manage secrets via a vault or platform-specific secret store
+
+### Reset/clean start
+
+- To wipe all data and start fresh:
+  - Stop containers: `docker-compose down`
+  - Remove local SQLite file and media: delete `./data/` (if you use SQLite)
+  - Remove volumes (Postgres/Mongo): `docker-compose down -v`
+  - Start again: `docker-compose up --build`
 
 ## License
 
