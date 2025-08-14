@@ -290,9 +290,6 @@ Observe incremental events over the WebSocket.
   - Remove volumes (Postgres/Mongo): `docker-compose down -v`
   - Start again: `docker-compose up --build`
 
-## License
-
-See `LICENSE`.
 
 
-DEMO VIDEO: https://drive.google.com/drive/folders/1TL5nbbscQrgcTFIKVGQZBGcJqM_UHfbD?usp=sharing
+DEMO VIDEO:https://drive.google.com/file/d/1xU0B0DOQFzF8vIxtuEzkfvvHer2ONl-F/view?usp=sharing
